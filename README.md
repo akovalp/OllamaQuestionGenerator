@@ -100,7 +100,7 @@ The application will attempt to fetch the list of available models, but having a
 ### 3. Clone the Repository
 
 ```bash
-git clone https://github.com/your-user-name/AlpThesis.git # Replace with your repo URL
+git clone https://github.com/your-user-name/OllamaQuestionGenerator.git # Replace with your repo URL
 cd autoquestion-generator
 ```
 
