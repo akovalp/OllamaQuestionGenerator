@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 import streamlit as st
 import time
 from pydantic import BaseModel  # Keep Pydantic for AppState
-
+from pprint import pprint  # For debugging purposes
 
 # Import necessary components from the backend module
 import backend
@@ -15,15 +15,27 @@ from fuzzywuzzy import fuzz
 
 # --- Frontend Specific Pydantic Model for Session State ---
 
+SUPPORTED_LANGUAGES = ["English", "Spanish", "French",
+                       "Turkish", "Italian", "Danish", "Russian"]
+PROFICIENCY_LEVELS = ["Basic", "Intermediate", "Advanced"]
+WRITING_STYLES = ["Formal", "Informal", "Humorous",
+                  "Serious", "Friendly", "Easy to read", "Neutral"]
+
 
 class AppState(BaseModel):
-    """Model for storing application state in Streamlit's session state."""
+    """
+
+    Model for storing application state in Streamlit's session state.
+
+
+    """
     topic: str = ""
     language: str = "English"
     level: str = "Basic"
-    style: str = "Formal"
+    style: str = "Informal"
     selected_model: str = backend.DEFAULT_MODEL
     num_questions: int = backend.NUM_QUESTIONS
+    num_choices: int = backend.NUM_CHOICES
     generated_text: str = ""
     # Use the Question model imported from backend
     questions: List[Question] = []
@@ -54,7 +66,12 @@ def init_session_state():
         app_state_dict["answers"] = [None] * num_q
 
 
+pprint(
+    f"The App has been initialized with the following default values: {AppState().model_dump()}")
+
 # --- Main Streamlit Application ---
+
+
 def main():
     """Main function to run the Streamlit app."""
     st.set_page_config(layout="wide", page_title="AutoQuestion Generator")
@@ -97,6 +114,11 @@ def main():
             key="model_select",  # Use a distinct key
             help="Select the Ollama model for generation. Ensure it's available locally."
         )
+        refresh_models = st.button(
+            "Refresh Models", key="refresh_models_button", help="Refresh the list of available models.")
+        if refresh_models:
+            with st.spinner("Refreshing available models..."):
+                st.session_state.available_models = backend.get_available_models()
         # Update state only if changed to avoid unnecessary reruns
         if selected_model != app_state["selected_model"]:
             app_state["selected_model"] = selected_model
@@ -113,6 +135,14 @@ def main():
         )
         if num_questions != app_state["num_questions"]:
             app_state["num_questions"] = num_questions
+        num_characters = st.slider(
+            "Number of options in the Questions",
+            min_value=1,
+            max_value=10,
+            value=app_state["num_choices"],
+            key="num_options_slider",
+            help="Select how many answer options to provide for each question."
+        )
 
     # --- Main Area for Inputs and Outputs ---
     st.header("📝 Input Parameters")
@@ -125,10 +155,9 @@ def main():
             topic = st.text_input(
                 "Main Topic", value=app_state["topic"], key="topic_input")
             language = st.selectbox("Language",
-                                    ["English", "Spanish", "French", "German",
-                                     "Italian", "Danish", "Russian"],
-                                    index=["English", "Spanish", "French", "German", "Italian", "Danish", "Russian"].index(
-                                        app_state["language"]) if app_state["language"] in ["English", "Spanish", "French", "German", "Italian", "Danish", "Russian"] else 0,
+                                    SUPPORTED_LANGUAGES,
+                                    index=SUPPORTED_LANGUAGES.index(
+                                        app_state["language"]) if app_state["language"] in SUPPORTED_LANGUAGES else 0,
                                     key="language_select")
         with col2:
             level = st.selectbox("Language Proficiency Level",
@@ -194,7 +223,8 @@ def main():
                 questions_data = question_generator.generate_questions(
                     app_state["generated_text"],
                     num_questions=app_state["num_questions"],
-                    language=app_state["language"]
+                    language=app_state["language"],
+                    choices_num=app_state["num_choices"],
                 )
                 # Validate and store questions using Pydantic model from backend
                 app_state["questions"] = [backend.Question(
