@@ -1,0 +1,6 @@
+streamlit
+pydantic
+ollama
+textstat
+fuzzywuzzy
+python-Levenshtein

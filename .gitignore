@@ -1,0 +1,5 @@
+__pycache__/backend.cpython-311.pyc
+__pycache__
+.DS_Store
+.env
+generate.ipynb
