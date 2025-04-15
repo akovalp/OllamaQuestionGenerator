@@ -4,6 +4,7 @@ import streamlit as st
 import time
 from pydantic import BaseModel  # Keep Pydantic for AppState
 from pprint import pprint  # For debugging purposes
+import os  # For environment variable handling
 
 # Import necessary components from the backend module
 import backend
@@ -44,6 +45,7 @@ class AppState(BaseModel):
     iterations: int = 0
     metrics: Dict[str, Any] = {}
     quiz_submitted: bool = False  # Flag to know if quiz answers were submitted
+    provider: str = "Ollama"  # New: Track selected provider
 
 # --- Session State Initialization ---
 
@@ -59,6 +61,10 @@ def init_session_state():
     for key, default_value in AppState().model_dump().items():
         if key not in app_state_dict:
             app_state_dict[key] = default_value
+
+    # Ensure provider is set
+    if "provider" not in app_state_dict:
+        app_state_dict["provider"] = "Ollama"
 
     # Ensure answers list matches the number of questions
     num_q = len(app_state_dict.get("questions", []))
@@ -88,42 +94,77 @@ def main():
     init_session_state()
     app_state = st.session_state.app_state  # Use dict directly
 
-    # Fetch available models from backend ONCE per session or if list is empty
-    # This prevents calling ollama.list() on every rerun
-    if "available_models" not in st.session_state or not st.session_state.available_models:
-        with st.spinner("Fetching available Ollama models..."):
-            st.session_state.available_models = backend.get_available_models()
-            # Ensure the currently selected model is valid, fallback if necessary
-            if app_state["selected_model"] not in st.session_state.available_models:
-                st.warning(
-                    f"Previously selected model '{app_state['selected_model']}' not found. Switching to default '{backend.DEFAULT_MODEL}'.")
-                app_state["selected_model"] = backend.DEFAULT_MODEL
-
-    available_models = st.session_state.available_models
-
-    # --- Sidebar for Configuration ---
+    # --- Provider and Model Selection ---
+    GROQ_MODELS = [
+        "llama-3.1-8b-instant",
+        "meta-llama/llama-4-scout-17b-16e-instruct"
+    ]
+    PROVIDERS = ["Ollama", "Groq"]
+    # Provider selection
     with st.sidebar:
         st.header("⚙️ Configuration")
+        provider = st.selectbox(
+            "Provider",
+            PROVIDERS,
+            index=PROVIDERS.index(app_state.get("provider", "Ollama")),
+            key="provider_select",
+            help="Choose between local Ollama or Groq cloud LLMs."
+        )
 
-        # Model selection - update AppState on change
+        # Add Groq API Key input field when Groq is selected
+        if provider == "Groq":
+            # Initialize the groq_api_key in session state if not present
+            if "groq_api_key" not in st.session_state:
+                st.session_state.groq_api_key = os.environ.get(
+                    "GROQ_API_KEY", "")
+
+            groq_api_key = st.text_input(
+                "Groq API Key",
+                value=st.session_state.groq_api_key,
+                type="password",
+                help="Enter your Groq API key. Required for Groq models.",
+                key="groq_api_key_input"
+            )
+
+            # Update the session state when the API key changes
+            if groq_api_key != st.session_state.groq_api_key:
+                st.session_state.groq_api_key = groq_api_key
+                # Also set it as an environment variable for the backend to use
+                os.environ["GROQ_API_KEY"] = groq_api_key
+
+        if provider != app_state["provider"]:
+            app_state["provider"] = provider
+            # Reset model selection to default for new provider
+            if provider == "Ollama":
+                app_state["selected_model"] = backend.DEFAULT_MODEL
+            else:
+                app_state["selected_model"] = GROQ_MODELS[0]
+            st.rerun()
+        # Model selection logic
+        if provider == "Ollama":
+            if "available_models" not in st.session_state or not st.session_state.available_models:
+                with st.spinner("Fetching available Ollama models..."):
+                    st.session_state.available_models = backend.get_available_models()
+            available_models = st.session_state.available_models
+        else:
+            available_models = GROQ_MODELS
         selected_model = st.selectbox(
             "LLM Model",
             available_models,
             index=available_models.index(
                 app_state["selected_model"]) if app_state["selected_model"] in available_models else 0,
-            key="model_select",  # Use a distinct key
-            help="Select the Ollama model for generation. Ensure it's available locally."
+            key="model_select",
+            help=f"Select the {'Ollama' if provider == 'Ollama' else 'Groq'} model for generation."
         )
-        refresh_models = st.button(
-            "Refresh Models", key="refresh_models_button", help="Refresh the list of available models.")
-        if refresh_models:
-            with st.spinner("Refreshing available models..."):
-                st.session_state.available_models = backend.get_available_models()
-        # Update state only if changed to avoid unnecessary reruns
         if selected_model != app_state["selected_model"]:
             app_state["selected_model"] = selected_model
-            st.rerun()  # Rerun to ensure consistency if model changes affect defaults/logic
-
+            st.rerun()
+        if provider == "Ollama":
+            refresh_models = st.button(
+                "Refresh Models", key="refresh_models_button", help="Refresh the list of available models.")
+            if refresh_models:
+                with st.spinner("Refreshing available models..."):
+                    st.session_state.available_models = backend.get_available_models()
         # Update AppState on change for sliders/selects
         num_questions = st.slider(
             "Number of Questions",
@@ -189,11 +230,25 @@ def main():
         app_state["style"] = style
         app_state["quiz_submitted"] = False  # Reset quiz submission status
 
-        # Instantiate backend classes with the selected model from state
+        # Instantiate backend classes with the selected model and provider from state
+        # Get Groq API key from session state if provider is Groq
+        api_key = st.session_state.groq_api_key if app_state["provider"] == "Groq" else None
+
         text_generator = backend.TextGenerator(
-            model=app_state["selected_model"])
+            model=app_state["selected_model"],
+            provider=app_state["provider"].lower())
+
+        # Set the API key in the LLM provider
+        if api_key:
+            text_generator.llm.api_key = api_key
+
         question_generator = backend.QuestionGenerator(
-            model=app_state["selected_model"])
+            model=app_state["selected_model"],
+            provider=app_state["provider"].lower())
+
+        # Set the API key in the LLM provider
+        if api_key:
+            question_generator.llm.api_key = api_key
 
         # Display progress
         progress_text = f"Generating content for '{app_state['topic']}' using {app_state['selected_model']}..."

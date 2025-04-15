@@ -42,6 +42,7 @@ def build_english_prompt(topic, level, language, style, previous_score=None, pre
     prompt = f"""
     Create a {level.lower()} level reading passage in {language} about "{topic}" with a {style.lower()} tone.
     Guidelines:
+    - Important: Even if the topic is in another language the entire text MUST be in English.
     - Target Word Count: {words_range.get(level, "300-400")} words.
     - Vocabulary/Complexity: Use vocabulary and sentence structures appropriate for the {level} level ({'simple sentences/common words' if level == 'Basic' else ('more complex sentences/some specialized terms' if level == 'Intermediate' else 'complex structures/domain-specific vocabulary')}).
     - Content: Ensure cohesive paragraphs with clear transitions. Develop the topic with appropriate depth for the level.
@@ -235,7 +236,7 @@ class TextGenerator:
             prompts_used.append(prompt)  # <-- Save each prompt
             try:
                 messages = [
-                    {"role": "system", "content": "You are a professional language teacher tasked to create a reading passage. Do not give any output besides the text do not include things like 'ok here is your text' or 'here is the text'."},
+                    {"role": "system", "content": "You are a professional language teacher tasked to create a reading passage. Do not give any output besides the text do not include things like 'ok here is your text' or 'here is the text'. Always make sure that generated text is in English event the topic is in another language."},
                     {"role": "user", "content": prompt}
                 ]
                 response = self.llm.generate(messages)
