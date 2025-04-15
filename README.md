@@ -1,4 +1,3 @@
-
 # 📚 AutoQuestion Generator
 
 **Generate Reading Passages and Multiple-Choice Questions using Local LLMs**
@@ -8,6 +7,8 @@ This project, developed as part of a thesis, demonstrates how Large Language Mod
 This tool showcases a simple yet effective **agentic workflow**: it first tasks an LLM with generating text, then analyzes that text (for English), and finally tasks the LLM again to create questions based on the initial output. This multi-step process, combined with validation techniques, helps ensure the quality and relevance of the generated content.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Ollama](https://img.shields.io/badge/-Ollama-000000?style=flat&logo=ollama&logoColor=white)
+
 
 ## ✨ Key Features
 
@@ -17,7 +18,9 @@ This tool showcases a simple yet effective **agentic workflow**: it first tasks 
     *   Proficiency Level (Basic, Intermediate, Advanced)
     *   Writing Style (Formal, Informal, Humorous, etc.)
 *   **Question Generation:** Automatically creates multiple-choice questions (with answers) based *only* on the generated text.
-*   **Local LLM Powered:** Uses models running locally via [Ollama](https://ollama.com/), ensuring privacy and offline capability. Supports switching between different downloaded Ollama models.
+*   **Multiple LLM Providers:** 
+    *   **Local LLM Powered:** Uses models running locally via [Ollama](https://ollama.com/), ensuring privacy and offline capability. Supports switching between different downloaded Ollama models.
+    *   **Cloud LLM Integration:** Supports [Groq](https://groq.com/) for blazing fast generation when you need speed over local privacy.
 *   **Quality Control & Agentic Workflow:**
     *   **Iterative Refinement (English):** For English text, it uses `textstat` to calculate the Gunning Fog readability index and iteratively re-prompts the LLM if the generated text doesn't match the target difficulty level.
     *   **Structured Output:** Prompts the LLM to return questions in a specific JSON format.
@@ -41,14 +44,14 @@ This tool serves as a practical example of how AI can assist language educators 
 1.  **User Input:** The user specifies parameters (topic, language, level, style, number of questions, LLM model) in the Streamlit frontend.
 2.  **Text Generation (`backend.TextGenerator`):**
     *   Constructs a detailed prompt based on user input.
-    *   Sends the prompt to the selected Ollama LLM.
+    *   Sends the prompt to the selected LLM provider (Ollama or Groq).
     *   **(English Only):** If the language is English, it calculates the Gunning Fog score of the generated text using `textstat`. If the score is outside the target range for the selected level, it refines the prompt (asking for simpler/more complex text) and asks the LLM to regenerate. This loop continues for a limited number of iterations (`MAX_ITERATIONS`) or until suitable text is generated.
     *   Stores the generated text.
 3.  **Text Analysis (`backend.TextMetrics`):**
     *   Calculates metrics (word count, etc.) for the generated text.
 4.  **Question Generation (`backend.QuestionGenerator`):**
     *   Constructs a prompt including the generated text, requesting a specific number of multiple-choice questions in JSON format.
-    *   Sends the prompt to the Ollama LLM, explicitly requesting JSON output (`format='json'`).
+    *   Sends the prompt to the LLM provider, explicitly requesting JSON output.
     *   Receives the JSON response from the LLM.
     *   **Crucially, validates the received JSON** against the `Questions` Pydantic model. If validation fails, an error is raised. This ensures the data structure is correct before further processing.
 5.  **Frontend Display (`frontend.py`):**
@@ -64,9 +67,10 @@ This tool serves as a practical example of how AI can assist language educators 
 
 *   **Python:** Version 3.8 or higher.
 *   **Pip:** Python package installer.
-*   **Ollama:** The engine for running local LLMs.
+*   **Ollama:** The engine for running local LLMs (optional if you only use Groq).
+*   **Groq API Key:** For using Groq's cloud-based LLM (optional if you only use Ollama).
 
-### 1. Install Ollama
+### 1. Install Ollama (Optional)
 
 Follow the official instructions for your operating system: [https://ollama.com/](https://ollama.com/)
 
@@ -76,7 +80,7 @@ Follow the official instructions for your operating system: [https://ollama.com/
 
 After installation, ensure Ollama is running. You might need to start the Ollama application (macOS/Windows) or ensure the service is running (Linux).
 
-### 2. Download an Ollama LLM Model
+### 2. Download an Ollama LLM Model (Optional)
 
 You need at least one model compatible with Ollama. This project defaults to `gemma:2b`, a relatively small and fast model suitable for testing. You can download it via the command line:
 
@@ -97,14 +101,33 @@ ollama list
 
 The application will attempt to fetch the list of available models, but having at least one downloaded beforehand is recommended.
 
-### 3. Clone the Repository
+### 3. Get a Groq API Key (Optional)
+
+For faster generation using Groq's powerful cloud LLMs, you'll need to set up an API key:
+
+1. Create a Groq account at [https://console.groq.com/signup](https://console.groq.com/signup)
+2. After signing in, navigate to [https://console.groq.com/keys](https://console.groq.com/keys)
+3. Click "Create API Key" and copy your new API key
+
+There are two ways to provide your Groq API key to the application:
+
+**Method 1: Environment Variable File**
+Create a `.env` file in the project root with the following content:
+```
+GROQ_API_KEY=your_api_key_here
+```
+
+**Method 2: Input in the Application UI**
+You can input your API key directly in the application when you select Groq as the provider.
+
+### 4. Clone the Repository
 
 ```bash
 git clone https://github.com/your-user-name/OllamaQuestionGenerator.git # Replace with your repo URL
 cd autoquestion-generator
 ```
 
-### 4. Install Dependencies
+### 5. Install Dependencies
 
 
 ```bash
@@ -112,7 +135,7 @@ pip install -r requirements.txt
 ```
 *(Note: `python-Levenshtein` improves the speed of `fuzzywuzzy`)*
 
-### 5. Run the Streamlit App
+### 6. Run the Streamlit App
 
 Navigate to the repository directory in your terminal and run:
 
@@ -125,7 +148,11 @@ This should automatically open the application in your default web browser.
 ## 💻 Usage
 
 1.  Open the application in your browser (usually `http://localhost:8501`).
-2.  Use the sidebar (**⚙️ Configuration**) to select the desired Ollama model (it should list the models you have downloaded) and the number of questions to generate.
+2.  Use the sidebar (**⚙️ Configuration**) to select:
+    * Your preferred provider (Ollama for local generation or Groq for cloud generation)
+    * If using Ollama: select the Ollama model (it should list the models you have downloaded)
+    * If using Groq: enter your API key if not provided via `.env` file
+    * The number of questions to generate
 3.  In the main area (**📝 Input Parameters**), enter the main topic for the reading passage.
 4.  Select the target language, proficiency level, and writing style.
 5.  Click the **✨ Generate Content** button.
@@ -138,7 +165,10 @@ This should automatically open the application in your default web browser.
 
 Most configuration is done via the Streamlit interface:
 
-*   **LLM Model:** Select any Ollama model downloaded on your system.
+*   **Provider:** Choose between Ollama (local) or Groq (cloud) LLMs.
+*   **LLM Model:** 
+    * For Ollama: Select any model downloaded on your system.
+    * For Groq: Choose between available Groq models (`llama-3.1-8b-instant` or `meta-llama/llama-4-scout-17b-16e-instruct`).
 *   **Number of Questions:** Adjust the quantity of MCQs to generate (1-10).
 *   **Input Parameters:** Topic, Language, Level, Style.
 
@@ -146,10 +176,8 @@ Constants like `MAX_ITERATIONS` (for English text refinement) or `SIMILARITY_THR
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (you'll need to create a LICENSE file with the MIT license text if you don't have one).
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
 
 ## 🙏 Acknowledgements
 
-*   The developers of Ollama, Streamlit, Pydantic, Textstat, and FuzzyWuzzy.
-
-
+*   The developers of Ollama, Groq, Streamlit, Pydantic, Textstat, and FuzzyWuzzy.
