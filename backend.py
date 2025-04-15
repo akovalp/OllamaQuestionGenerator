@@ -12,7 +12,7 @@ import time
 from functools import wraps
 
 # --- Constants ---
-MAX_ITERATIONS = 7
+MAX_ITERATIONS = 10
 # Default number of questions (can be overridden by frontend)
 NUM_QUESTIONS = 5
 # Changed Default model to smaller one for faster generation
@@ -335,10 +335,12 @@ class TextGenerator:
 
 
 class QuestionGenerator:
-    """Class for generating questions based on text."""
+    """Class for generating questions based on text, supporting both Ollama and Groq."""
 
-    def __init__(self, model: str = DEFAULT_MODEL):
-        self.model = model if model in AVAILABLE_MODELS else DEFAULT_MODEL
+    def __init__(self, model: str = DEFAULT_MODEL, provider: str = "ollama"):
+        self.model = model
+        self.provider = provider
+        self.llm = LLMProvider(provider, model)
         if model not in AVAILABLE_MODELS:
             print(
                 f"Warning: Specified model '{model}' not found in Ollama list. Falling back to '{self.model}'.")
@@ -348,7 +350,6 @@ class QuestionGenerator:
         if not generated_text.strip():
             raise ValueError("Generated text cannot be empty")
 
-        # Refined prompt requesting JSON output matching the Pydantic model
         prompt = f"""
         Reading Passage ({language}):
         ---
@@ -380,10 +381,19 @@ class QuestionGenerator:
         Generate the JSON output now based on the provided passage.
         """
 
-        # Log model used
-        print(f"Generating questions with model: {self.model}")
+        print(
+            f"Generating questions with model: {self.model} (provider: {self.provider})")
 
+        if self.provider == "ollama":
+            return self._generate_questions_ollama(prompt, num_questions, language, choices_num)
+        elif self.provider == "groq":
+            return self._generate_questions_groq(prompt, num_questions, language, choices_num)
+        else:
+            raise ValueError(f"Unknown provider: {self.provider}")
+
+    def _generate_questions_ollama(self, prompt, num_questions, language, choices_num):
         try:
+            import ollama
             response = ollama.chat(
                 model=self.model,
                 messages=[
@@ -391,34 +401,54 @@ class QuestionGenerator:
                         "content": f"You are an AI assistant specialized in creating multiple-choice comprehension questions based on provided text. Respond ONLY with the requested JSON object containing the questions. Ensure all text content (questions, choices, answers) is in {language}."},
                     {"role": "user", "content": prompt}
                 ],
-                format='json',  # Request JSON format directly
-                # Lower temperature for more predictable JSON structure
+                format='json',
                 options={"temperature": 0.5}
             )
-
-            # The response content should be a JSON string
             json_response_str = response['message']['content']
-
-            # Attempt to parse the JSON string
             try:
-                # Validate the parsed data against the Pydantic model
                 validated_data = Questions.model_validate_json(
                     json_response_str)
-                # Ensure the correct number of questions were generated
                 if len(validated_data.questions) != num_questions:
                     print(
                         f"Warning: Requested {num_questions} questions, but model generated {len(validated_data.questions)}. Using generated questions.")
-                    # You might want to retry or handle this case more robustly
-                return validated_data.model_dump()  # Return Pydantic model output as dict
-            except (json.JSONDecodeError, ValidationError) as json_error:
+                return validated_data.model_dump()
+            except (json.JSONDecodeError, Exception) as json_error:
                 print(
                     f"Error: Failed to parse or validate JSON response from model {self.model}.")
                 print(f"Model Response String: {json_response_str}")
                 raise Exception(
                     f"Could not parse valid JSON questions from the model: {json_error}")
-
         except Exception as e:
-            # Catch errors from ollama.chat or JSON parsing
+            raise Exception(
+                f"Error generating questions with model {self.model}: {e}")
+
+    def _generate_questions_groq(self, prompt, num_questions, language, choices_num):
+        try:
+            messages = [
+                {"role": "system",
+                    "content": f"You are an AI assistant specialized in creating multiple-choice comprehension questions based on provided text. Respond ONLY with the requested JSON object containing the questions. Ensure all text content (questions, choices, answers) is in {language}. you need to make sure that there are exactly {num_questions} questions and {choices_num} choices for each question."},
+                {"role": "user", "content": prompt}
+            ]
+            response = self.llm.generate(
+                messages=messages,
+                temperature=0.5,
+                response_format={"type": "json_object"}
+            )
+            json_response_str = response.get('content')
+            try:
+                validated_data = Questions.model_validate_json(
+                    json_response_str)
+                if len(validated_data.questions) != num_questions:
+                    print(
+                        f"Warning: Requested {num_questions} questions, but model generated {len(validated_data.questions)}. Using generated questions.")
+                return validated_data.model_dump()
+            except (json.JSONDecodeError, Exception) as json_error:
+                print(
+                    f"Error: Failed to parse or validate JSON response from model {self.model}.")
+                print(f"Model Response String: {json_response_str}")
+                raise Exception(
+                    f"Could not parse valid JSON questions from the model: {json_error}")
+        except Exception as e:
             raise Exception(
                 f"Error generating questions with model {self.model}: {e}")
 
